@@ -3,7 +3,12 @@ import time
 import string
 import random
 import subprocess as sp
+import pandas as pd
 from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
 from PIL import Image
 from PIL import ImageEnhance
 
@@ -60,18 +65,14 @@ def search_settings(driver, university, start, end):
         driver.find_element_by_class_name(
             'select2-results__options'
         ).find_elements_by_tag_name('li')[6].click()
-    startyear = driver.find_element_by_class_name('timespan_custom').find_element_by_class_name('startyear')
-    while True:
-        if startyear.get_property('value') == '{0}'.format(start):
-            break
-        else:
-            startyear.send_keys('{0}'.format(start))
-    endyear = driver.find_element_by_class_name('timespan_custom').find_element_by_class_name('endyear')
-    while True:
-        if endyear.get_property('value') == '{0}'.format(end):
-            break
-        else:
-            endyear.send_keys('{0}'.format(end))
+    yeararrows = driver.find_element_by_class_name('timespan_custom').find_elements_by_class_name('select2-selection')
+    for i in range(len(yeararrows)):
+        yeararrows[i].click()
+        yearoptions = driver.find_elements_by_class_name('select2-results__option')
+        for yop in yearoptions:
+            if yop.text == '{0}'.format([start, end][i]):
+                yop.click()
+                break
 
     # more settings
     if 'fa-caret-down' in driver.find_element_by_id('settings-arrow').get_attribute('class'):
@@ -91,8 +92,19 @@ def start_search(driver):
     searchbutton.click()
 
 
+def check_search(driver):
+    try:
+        driver.find_element_by_id('noRecordsDiv')
+        return False
+    except NoSuchElementException:
+        return True
+
+
 def analysisresult(driver):
     # analysis result
+    WebDriverWait(driver, 4).until(
+        EC.presence_of_element_located((By.CLASS_NAME, 'create-cite-report'))
+    )
     driver.find_element_by_class_name(
         'create-cite-report'
     ).find_element_by_class_name(
@@ -102,12 +114,14 @@ def analysisresult(driver):
 
 def analysispage(driver):
     # 选择显示数量
-    shownum = driver.find_element_by_id('refineMaxRows')
-    while True:
-        if shownum.get_property('value') == '500':
+    driver.find_element_by_id('select2-refineMaxRows-container').click()
+    shownums = driver.find_element_by_id(
+        'select2-refineMaxRows-results'
+    ).find_elements_by_class_name('select2-results__option')
+    for nop in shownums:
+        if nop.text == '500':
+            nop.click()
             break
-        else:
-            shownum.send_keys('500')
     # 数据
     evenrows = driver.find_element_by_class_name(
         'RA-NEWresultsSectionTable'
@@ -133,6 +147,9 @@ def crawler(driver, university, start, end, filepath):
         search_settings(driver, university, year, year)
         # 开始搜索
         start_search(driver)
+        if not check_search(driver):
+            continue
+        time.sleep(1)
         # 科目分析页面
         analysisresult(driver)
         # 下载数据
@@ -143,8 +160,6 @@ def crawler(driver, university, start, end, filepath):
         time.sleep(random.randint(0, 1))
 
 
-
-
 profile = webdriver.FirefoxProfile()
 profile.set_preference('browser.download.folderList', 2)
 profile.set_preference('browser.download.dir', os.path.join(os.getcwd(), 'filedata'))
@@ -153,4 +168,16 @@ profile.set_preference('browser.helperApps.neverAsk.saveToDisk', 'application/x-
 driver = webdriver.Firefox(firefox_profile=profile, executable_path=r'./geckodriver.exe')
 
 
-crawler(driver, university='Peking University', start=2011, end=2011, filepath=os.path.join('./filedata', '北京大学.csv'))
+university = pd.read_table('university.txt', header=0)
+
+for row in university.loc[404:600, ].iterrows():
+    print('{0}: {1}'.format(row[0], row[1]['学校名称']))
+    crawler(
+        driver,
+        university=row[1]['英文名称'],
+        start=2001,
+        end=2017,
+        filepath=os.path.join('./filedata', row[1]['学校名称'] + '.csv')
+    )
+
+crawler(driver, university='Peking University', start=2002, end=2017, filepath=os.path.join('./filedata', '北京大学.csv'))
